@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { WORLD_FACTS } from '../../constants';
@@ -7,36 +7,66 @@ import { useFactBoardTexture, useWoodTexture } from './worldTextures';
 
 interface InfoBoardProps {
   board: InfoBoardData;
+  completed?: boolean;
+  /** Dipanggil saat papan diklik (buka kartu / misi zona). */
+  onSelect?: () => void;
 }
 
 /**
- * Papan fakta bergaya kemah alam. Saat pemain mendekat, World3D
- * membuka panel HTML agar teks mudah dibaca anak.
+ * Papan fakta bergaya kemah alam. Saat pemain mendekat — atau saat papan
+ * diklik — World3D membuka panel HTML agar teks mudah dibaca anak.
  */
-export const InfoBoard: React.FC<InfoBoardProps> = ({ board }) => {
+export const InfoBoard: React.FC<InfoBoardProps> = ({ board, completed = false, onSelect }) => {
   const zone = MISSION_ZONES.find((item) => item.id === board.zoneId);
   const data = WORLD_FACTS[board.zoneId];
-  const color = zone?.color || '#4f46e5';
+  const color = completed ? '#10b981' : zone?.color || '#4f46e5';
   const texture = useFactBoardTexture(data.title, data.facts, data.icon, color);
   const wood = useWoodTexture(1, 1);
   const glow = useRef<THREE.Mesh>(null);
+  const hovered = useRef(false);
+
+  useEffect(
+    () => () => {
+      document.body.style.cursor = '';
+    },
+    []
+  );
+
+  const setHover = (value: boolean) => {
+    hovered.current = value;
+    document.body.style.cursor = value ? 'pointer' : '';
+  };
 
   useFrame((state) => {
     if (!glow.current) return;
     const material = glow.current.material as THREE.MeshBasicMaterial;
-    material.opacity = 0.12 + (Math.sin(state.clock.elapsedTime * 1.6) + 1) * 0.045;
+    const base = 0.12 + (Math.sin(state.clock.elapsedTime * 1.6) + 1) * 0.045;
+    material.opacity = hovered.current ? base + 0.22 : base;
   });
 
   return (
-    <group position={board.position} rotation-y={board.rotation}>
-      {/* Tiang kayu */}
+    <group
+      position={board.position}
+      rotation-y={board.rotation}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect?.();
+      }}
+      onPointerOver={(event) => {
+        event.stopPropagation();
+        setHover(true);
+      }}
+      onPointerOut={() => setHover(false)}
+    >
+      {/* Tiang kayu — diletakkan di belakang papan (Z negatif) supaya batang
+          dan kenopnya tidak menembus / menutupi teks di permukaan depan. */}
       {[-1.02, 1.02].map((x) => (
         <group key={x}>
-          <mesh position={[x, 1.05, 0]}>
+          <mesh position={[x, 1.05, -0.25]}>
             <cylinderGeometry args={[0.1, 0.13, 2.1, 7]} />
             <meshStandardMaterial color="#7a4f2a" roughness={0.95} map={wood} />
           </mesh>
-          <mesh position={[x, 2.12, 0]}>
+          <mesh position={[x, 2.12, -0.25]}>
             <sphereGeometry args={[0.14, 8, 6]} />
             <meshStandardMaterial color="#5c3a1b" roughness={1} />
           </mesh>

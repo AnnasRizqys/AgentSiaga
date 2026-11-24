@@ -1,19 +1,30 @@
 /// <reference types="react" />
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Shield, Trophy, RefreshCw, ChevronRight, CheckCircle, XCircle, AlertTriangle, Backpack, Heart, Star, CloudRain, Flame, Mountain, ArrowUp, User, Users, Medal, Volume2, VolumeX } from 'lucide-react';
+import { MapPin, Shield, Trophy, RefreshCw, ChevronRight, CheckCircle, XCircle, AlertTriangle, Backpack, Heart, Star, CloudRain, Flame, Mountain, ArrowUp, User, Users, Medal, Volume2, VolumeX, X, BookOpen } from 'lucide-react';
 import { LEVELS, LEADERBOARD_DATA, FLOOD_BAG_ITEMS, FLOOD_BAG_CAPACITY, FLOOD_BAG_USEFUL_COUNT, FloodBagItem, AVATARS } from './constants';
 import { GamePhase, LevelConfig, PlayerState, Item, DisasterType, Avatar } from './types';
 import { Button } from './components/Button';
-import { LEVEL_COLOR_CLASSES, AVATAR_STYLE_CLASSES } from './colorUtils';
+import { LEVEL_COLOR_CLASSES } from './colorUtils';
 import { useSoundEffects } from './useSoundEffects';
 import { AINarrator } from './components/AINarrator';
 import { SideNarrator } from './components/SideNarrator';
+import { ExitConfirmDialog } from './components/ExitConfirmDialog';
+import { MateriSingkat } from './components/MateriSingkat';
 import {
   WorldLoadingScreen,
   WorldLoadBoundary,
 } from './components/world/WorldLoadingScreen';
 import { PerformanceData, generateQuestionFeedback } from './services/geminiService';
+import { LandingPage } from './components/LandingPage';
+import { TeamRegistrationModal } from './components/TeamRegistrationModal';
+import { TeacherDashboard } from './components/TeacherDashboard';
+import {
+  getActiveSession,
+  updateSession,
+  useTeamSessions,
+  type TeamSession,
+} from './sessionStore';
 
 // Dunia 3D diunduh terpisah supaya Mode Klasik dan menu tetap ringan.
 const World3D = React.lazy(() => import('./components/world/World3D'));
@@ -159,91 +170,6 @@ const SoundToggle = ({ isEnabled, onToggle }: { isEnabled: boolean, onToggle: ()
 );
 
 // --- Sub-Components ---
-
-// 0. Team Registration (Replaces Avatar Selection)
-const TeamRegistration = ({ onRegister, playSound }: { onRegister: (name: string, avatar: Avatar) => void, playSound: (type: string) => void }) => {
-  const [teamName, setTeamName] = useState("");
-  const [selectedAvatar, setSelectedAvatar] = useState<Avatar | null>(null);
-  const [error, setError] = useState("");
-
-  const handleSubmit = () => {
-    if (!teamName.trim()) {
-      setError("Nama kelompok belum diisi!");
-      playSound('warning');
-      return;
-    }
-    if (!selectedAvatar) {
-      setError("Pilih maskot tim dulu!");
-      playSound('warning');
-      return;
-    }
-    playSound('success');
-    onRegister(teamName, selectedAvatar);
-  };
-
-  return (
-    <div className="max-w-4xl mx-auto">
-      <div className="text-center mb-8">
-        <h2 className="text-4xl font-display font-bold text-gray-800 mb-2">Registrasi Tim</h2>
-        <p className="text-gray-500 text-lg">Buat nama kelompok kalian sekeren mungkin!</p>
-      </div>
-
-      <div className="bg-white rounded-[2rem] p-8 shadow-xl border-4 border-indigo-100 max-w-2xl mx-auto">
-        {/* Input Nama Tim */}
-        <div className="mb-8">
-          <label className="block text-indigo-900 font-bold text-lg mb-2 ml-2">Nama Kelompok / Tim:</label>
-          {/* @ts-ignore - environment JSX types can be finicky here, provide explicit event typing below */}
-          <input
-            type="text"
-            placeholder="Contoh: Tim Harimau, Kelompok 1, Avengers..."
-            className="w-full text-2xl font-bold p-4 rounded-2xl border-4 border-indigo-200 focus:border-indigo-500 focus:outline-none text-indigo-700 placeholder-indigo-300 transition-colors bg-indigo-50/50"
-            value={teamName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              setTeamName(e.target.value);
-              setError("");
-            }}
-            maxLength={15}
-          />
-        </div>
-
-        {/* Pilih Avatar */}
-        <div className="mb-8">
-          <label className="block text-indigo-900 font-bold text-lg mb-4 ml-2">Pilih Maskot Tim:</label>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-            {AVATARS.map((avatar) => (
-              <MotionDiv
-                key={avatar.id}
-                whileTap={{ scale: 0.9 }}
-                onClick={() => {
-                  setSelectedAvatar(avatar);
-                  setError("");
-                  playSound('click');
-                }}
-                className={`cursor-pointer rounded-2xl p-2 border-4 flex flex-col items-center justify-center aspect-square transition-all ${selectedAvatar?.id === avatar.id ? AVATAR_STYLE_CLASSES[avatar.color as keyof typeof AVATAR_STYLE_CLASSES] : 'border-gray-100 bg-gray-50 hover:bg-gray-100'}`}
-              >
-                <div className="text-3xl">{avatar.icon}</div>
-              </MotionDiv>
-            ))}
-          </div>
-        </div>
-
-        {error && (
-          <MotionDiv
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-red-100 text-red-600 p-3 rounded-xl font-bold text-center mb-6 animate-pulse border border-red-200 answer-shake"
-          >
-            ⚠️ {error}
-          </MotionDiv>
-        )}
-
-        <Button size="lg" fullWidth onClick={handleSubmit} className="text-xl py-4 shadow-xl glow-pulse" playSound={() => { }}>
-          DAFTARKAN TIM
-        </Button>
-      </div>
-    </div>
-  );
-};
 
 // 1. Level Selection Card
 const LevelCard = ({ level, onClick, completed, playSound }: { level: LevelConfig, onClick: () => void, completed?: boolean, playSound?: () => void }) => {
@@ -2686,12 +2612,14 @@ const LandslideAction = ({ onComplete, onReplay, playSound, updateSideNarrator }
 };
 
 // 4. Recovery Phase (Quiz)
-const RecoveryPhase = ({ level, teamName, onComplete, playSound, updateNarrator }: { level: LevelConfig, teamName: string, onComplete: (score: number) => void, playSound: (type: string) => void, updateNarrator: (msg: string, typing: boolean, st: 'idle' | 'warning' | 'success' | 'error') => void }) => {
+const RecoveryPhase = ({ level, teamName, onComplete, playSound, updateNarrator }: { level: LevelConfig, teamName: string, onComplete: (score: number, correctFlags: boolean[]) => void, playSound: (type: string) => void, updateNarrator: (msg: string, typing: boolean, st: 'idle' | 'warning' | 'success' | 'error') => void }) => {
   const [currentQ, setCurrentQ] = useState(0);
   const [score, setScore] = useState(0);
   const [showExplanation, setShowExplanation] = useState(false);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [answerState, setAnswerState] = useState<'correct' | 'wrong' | null>(null);
+  /** Jawaban benar per soal — dipakai untuk ringkasan poin yang dikuasai. */
+  const [correctFlags, setCorrectFlags] = useState<boolean[]>([]);
 
   // When a new question appears, narrator gives a generic prompt
   useEffect(() => {
@@ -2704,6 +2632,11 @@ const RecoveryPhase = ({ level, teamName, onComplete, playSound, updateNarrator 
     setSelectedOption(index);
     setShowExplanation(true);
     const isCorrect = index === question.correctIndex;
+    setCorrectFlags((prev) => {
+      const next = [...prev];
+      next[currentQ] = isCorrect;
+      return next;
+    });
 
     if (isCorrect) {
       setScore(prev => prev + 1);
@@ -2737,7 +2670,9 @@ const RecoveryPhase = ({ level, teamName, onComplete, playSound, updateNarrator 
       setSelectedOption(null);
     } else {
       const finalPercentage = Math.round((score + (selectedOption === question.correctIndex ? 1 : 0)) / level.quizQuestions.length * 100);
-      onComplete(finalPercentage);
+      const flags = [...correctFlags];
+      flags[currentQ] = selectedOption === question.correctIndex;
+      onComplete(finalPercentage, flags);
     }
   };
 
@@ -2953,15 +2888,38 @@ const App: React.FC = () => {
   const [phase, setPhase] = useState<GamePhase>('MENU');
   const [currentLevelId, setCurrentLevelId] = useState<DisasterType | null>(null);
   const [phaseScores, setPhaseScores] = useState<number[]>([]);
+  // Kartu materi singkat tampil di fase BRIEFING sebelum ACTION.
+  const [showMateri, setShowMateri] = useState(false);
   // Bumping this remounts the current ACTION game for a clean replay.
   const [actionReplayKey, setActionReplayKey] = useState(0);
   const [completedLevelScores, setCompletedLevelScores] = useState<Partial<Record<DisasterType, number>>>({});
+  // Skor kuis (fase RECOVERY) per misi — dipakai Dashboard Guru untuk
+  // menghitung rata-rata skor kuis tiap siswa/tim.
+  const [quizScores, setQuizScores] = useState<Partial<Record<DisasterType, number>>>({});
+  // Zona yang papan informasinya sudah dibaca (tanpa localStorage, cukup sesi ini).
+  const [readZoneIds, setReadZoneIds] = useState<DisasterType[]>([]);
   const [isFreePlay, setIsFreePlay] = useState<boolean>(false);
   const [gameMode, setGameMode] = useState<'adventure' | 'classic'>('adventure');
   const [selectedAvatar, setSelectedAvatar] = useState<Avatar | null>(null);
   const [teamName, setTeamName] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const bgmStarted = useRef(false);
+
+  // --- Identitas & sesi tim (tersambung ke Dashboard Guru) ---
+  const [studentName, setStudentName] = useState<string>("");
+  const [className, setClassName] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string | null>(() => getActiveSession()?.id ?? null);
+  const [showDashboard, setShowDashboard] = useState(false);
+  // Mencegah efek auto-save menimpa sesi tersimpan dengan state awal yang kosong
+  // sebelum pemain menekan "Lanjutkan misi" / login.
+  const sessionHydrated = useRef(false);
+  const allSessions = useTeamSessions();
+  const activeSession = useMemo(
+    () => allSessions.find((session) => session.id === sessionId) ?? null,
+    [allSessions, sessionId]
+  );
+  // Dialog konfirmasi keluar di layar level (BRIEFING / ACTION / RECOVERY).
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
   // --- AI Narrator (Kapten Siaga) state ---
   const [showNarrator, setShowNarrator] = useState(false);
@@ -2991,7 +2949,7 @@ const App: React.FC = () => {
     setSideNarrator({ message, isTyping, status, visible: true });
   }, []);
 
-  const { play, toggleSound, isEnabled, startBGM } = useSoundEffects();
+  const { play, toggleSound, isEnabled, startBGM, stopBGM } = useSoundEffects();
 
   useEffect(() => {
     if (phase !== 'MENU' && !bgmStarted.current && soundEnabled) {
@@ -3017,6 +2975,7 @@ const App: React.FC = () => {
   const startLevel = (levelId: DisasterType) => {
     setCurrentLevelId(levelId);
     setPhaseScores([]);
+    setShowMateri(false);
     setPhase('BRIEFING');
     setSideNarrator(prev => ({ ...prev, visible: false }));
     playSound('levelStart');
@@ -3031,6 +2990,7 @@ const App: React.FC = () => {
     setPhaseScores([]);
     setActionPerformance({});
     setActionReplayKey(k => k + 1);
+    setShowMateri(false);
     setShowNarrator(false);
     setNarratorData(null);
     setPendingNextPhase(null);
@@ -3039,12 +2999,107 @@ const App: React.FC = () => {
     playSound('levelStart');
   };
 
-  const handleTeamRegister = (name: string, avatar: Avatar) => {
-    setTeamName(name);
+  const markZoneRead = useCallback((zoneId: DisasterType) => {
+    setReadZoneIds((prev) => (prev.includes(zoneId) ? prev : [...prev, zoneId]));
+  }, []);
+
+  // Terapkan sesi (baru maupun hasil login) ke seluruh state permainan.
+  const applySession = (session: TeamSession, avatar: Avatar | null) => {
+    sessionHydrated.current = true;
+    setSessionId(session.id);
+    setStudentName(session.studentName);
+    setClassName(session.className);
+    setTeamName(session.teamName);
     setSelectedAvatar(avatar);
-    setPhase(gameMode === 'classic' ? 'LEVEL_SELECT' : 'WORLD_3D');
+    setGameMode(session.gameMode);
+    setCompletedLevelScores(session.completedLevelScores ?? {});
+    setQuizScores(session.quizScores ?? {});
+    setReadZoneIds(session.readZones ?? []);
+    setPhase(session.gameMode === 'classic' ? 'LEVEL_SELECT' : 'WORLD_3D');
     setSideNarrator(prev => ({ ...prev, visible: false }));
   };
+
+  const handleTeamRegister = (session: TeamSession, avatar: Avatar) => {
+    applySession(session, avatar);
+  };
+
+  // Login siswa = lanjutkan progres tim yang tersimpan.
+  const handleTeamLogin = (session: TeamSession, avatar: Avatar) => {
+    playSound('success');
+    applySession(session, avatar);
+  };
+
+  const handleContinueSession = () => {
+    if (!activeSession) return;
+    const avatar = AVATARS.find((item) => item.id === activeSession.avatarId) ?? null;
+    playSound('click');
+    applySession(activeSession, avatar);
+  };
+
+  // Simpan otomatis setiap kali skor / progres berubah → langsung terbaca
+  // oleh Dashboard Guru lewat sessionStore. Mode latihan bebas (free play)
+  // sengaja tidak menimpa progres resmi tim yang sudah tersimpan.
+  const persistedRef = useRef({
+    sessionId,
+    studentName,
+    teamName,
+    className,
+    avatarId: selectedAvatar?.id ?? '',
+    totalScore,
+    completedLevelScores,
+    quizScores,
+    readZoneIds,
+    gameMode,
+    isFreePlay,
+  });
+  persistedRef.current = {
+    sessionId,
+    studentName,
+    teamName,
+    className,
+    avatarId: selectedAvatar?.id ?? '',
+    totalScore,
+    completedLevelScores,
+    quizScores,
+    readZoneIds,
+    gameMode,
+    isFreePlay,
+  };
+
+  const persistSession = useCallback(() => {
+    const snapshot = persistedRef.current;
+    if (!snapshot.sessionId || !sessionHydrated.current || snapshot.isFreePlay) return;
+    updateSession(snapshot.sessionId, {
+      studentName: snapshot.studentName,
+      teamName: snapshot.teamName,
+      className: snapshot.className,
+      avatarId: snapshot.avatarId,
+      totalScore: snapshot.totalScore,
+      completedZones: Object.keys(snapshot.completedLevelScores) as DisasterType[],
+      completedLevelScores: snapshot.completedLevelScores,
+      quizScores: snapshot.quizScores,
+      readZones: snapshot.readZoneIds,
+      gameMode: snapshot.gameMode,
+    });
+  }, []);
+
+  useEffect(() => {
+    persistSession();
+  }, [persistSession, sessionId, studentName, teamName, className, selectedAvatar?.id, totalScore, completedLevelScores, quizScores, readZoneIds, gameMode, isFreePlay]);
+
+  // Juga tulis ke penyimpanan saat tab ditutup / disembunyikan, supaya progres
+  // di tengah level tetap selamat saat halaman di-refresh atau ponsel terkunci.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistSession();
+    };
+    window.addEventListener('beforeunload', persistSession);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', persistSession);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [persistSession]);
 
   // Replay the current ACTION game. Called from a game's result screen before
   // any score is recorded, so we just remount it fresh via a new key.
@@ -3054,7 +3109,7 @@ const App: React.FC = () => {
     updateSideNarrator('Ayo coba lagi! Kamu pasti bisa lebih baik.', false, 'warning');
   };
 
-  const handlePhaseComplete = (score: number) => {
+  const completePhase = (score: number, masteredPoints?: string[]) => {
     const newScores = [...phaseScores, score];
     setPhaseScores(newScores);
 
@@ -3088,11 +3143,29 @@ const App: React.FC = () => {
         score,
         quizCorrect,
         quizTotal,
+        masteredPoints,
       };
       setNarratorData(perfData);
       const currentLevelScore = newScores[0] + newScores[1];
       const newCompletedLevelScores = { ...completedLevelScores, ...(currentLevelId && !isFreePlay ? { [currentLevelId]: currentLevelScore } : {}) };
       setCompletedLevelScores(newCompletedLevelScores);
+      const nextQuizScores =
+        currentLevelId && !isFreePlay ? { ...quizScores, [currentLevelId]: score } : quizScores;
+      if (currentLevelId && !isFreePlay) setQuizScores(nextQuizScores);
+
+      // Tulis segera ke sessionStore saat kuis selesai — dashboard guru langsung
+      // menerima skor misi, skor kuis, total skor, dan status ketuntasan.
+      if (sessionId && !isFreePlay) {
+        updateSession(sessionId, {
+          completedZones: Object.keys(newCompletedLevelScores) as DisasterType[],
+          completedLevelScores: newCompletedLevelScores,
+          quizScores: nextQuizScores,
+          totalScore: Object.values(newCompletedLevelScores).reduce(
+            (sum, value) => sum + (value || 0),
+            0
+          ),
+        });
+      }
 
       const totalLevels = Object.keys(LEVELS).length;
       if (!isFreePlay && Object.keys(newCompletedLevelScores).length >= totalLevels) {
@@ -3105,6 +3178,33 @@ const App: React.FC = () => {
       }
       setShowNarrator(true);
     }
+  };
+
+  // Fase ACTION memanggil completePhase tanpa detail kuis.
+  const handlePhaseComplete = (score: number) => completePhase(score);
+
+  // Fase RECOVERY mengirimkan jawaban benar per soal supaya layar hasil bisa
+  // menampilkan ringkasan poin penting yang berhasil dikuasai siswa.
+  const handleQuizComplete = (score: number, correctFlags: boolean[]) => {
+    const level = currentLevelId ? LEVELS[currentLevelId] : LEVELS.EARTHQUAKE;
+    const masteredPoints = level.quizQuestions
+      .map((question, index) => (correctFlags[index] ? question.explanation : null))
+      .filter((point): point is string => Boolean(point));
+    completePhase(score, masteredPoints);
+  };
+
+  // Tombol "Ulangi Misi" di layar hasil kuis: mulai ulang game 2D + kuisnya,
+  // tanpa kehilangan progres zona lain yang sudah selesai.
+  const handleReplayMission = () => {
+    playSound('click');
+    setShowNarrator(false);
+    setNarratorData(null);
+    setPendingNextPhase(null);
+    setPhaseScores([]);
+    setActionReplayKey((key) => key + 1);
+    setActionPerformance({});
+    updateSideNarrator('Misi diulang dari awal. Semangat, Agen! Kamu pasti bisa! 💪', false, 'warning');
+    setPhase('ACTION');
   };
 
   // Called when narrator is dismissed
@@ -3135,22 +3235,60 @@ const App: React.FC = () => {
   };
 
   const resetGame = () => {
+    // Hentikan musik latar (dan hentikan penjadwalan nada berikutnya) sebelum
+    // kembali ke menu supaya tidak ada suara yang "nyangkut".
+    stopBGM();
+    bgmStarted.current = false;
+    setShowExitDialog(false);
     setPhase('MENU');
     setCurrentLevelId(null);
     setPhaseScores([]);
+    setShowMateri(false);
     setCompletedLevelScores({});
+    setQuizScores({});
+    setReadZoneIds([]);
     setIsFreePlay(false);
     setGameMode('adventure');
+    // Rekam tim tetap tersimpan di Dashboard Guru, hanya sesi aktif yang dilepas.
+    setSessionId(null);
     setSideNarrator(prev => ({ ...prev, visible: false }));
     setShowNarrator(false);
+    setNarratorData(null);
+    setPendingNextPhase(null);
+    setActionPerformance({});
   };
+
+  // Keluar dari misi level menuju dunia 3D tanpa menghapus progres zona.
+  // completedLevelScores sengaja TIDAK direset.
+  const exitLevelToWorld = () => {
+    setShowExitDialog(false);
+    setShowNarrator(false);
+    setNarratorData(null);
+    setPendingNextPhase(null);
+    setCurrentLevelId(null);
+    setPhaseScores([]);
+    setShowMateri(false);
+    setActionPerformance({});
+    setSideNarrator(prev => ({ ...prev, visible: false }));
+    setPhase('WORLD_3D');
+  };
+
+  // Pastikan dialog tidak "menempel" saat fase berganti (mis. narrator selesai).
+  useEffect(() => {
+    setShowExitDialog(false);
+  }, [phase]);
+
+  const isLevelMissionPhase =
+    phase === 'BRIEFING' || phase === 'ACTION' || phase === 'RECOVERY';
 
   const handleFreePlay = () => {
     setIsFreePlay(true);
     setPhase('LEVEL_SELECT');
     setCurrentLevelId(null);
     setPhaseScores([]);
+    setShowMateri(false);
     setCompletedLevelScores({});
+    setQuizScores({});
     setSideNarrator(prev => ({ ...prev, visible: false }));
     setShowNarrator(false);
   };
@@ -3207,6 +3345,8 @@ const App: React.FC = () => {
             avatar={selectedAvatar}
             score={totalScore}
             completedZones={Object.keys(completedLevelScores) as DisasterType[]}
+            readZones={readZoneIds}
+            onMarkZoneRead={markZoneRead}
             soundEnabled={soundEnabled}
             onToggleSound={handleToggleSound}
             onStartMission={startWorldMission}
@@ -3226,22 +3366,63 @@ const App: React.FC = () => {
     );
   }
 
+  // Dashboard Guru: tampilan penuh, terpisah dari alur misi.
+  if (showDashboard) {
+    return (
+      <TeacherDashboard
+        onBack={() => {
+          playSound('click');
+          setShowDashboard(false);
+        }}
+        playSound={playSound}
+      />
+    );
+  }
+
+  // Landing page + modal pendaftaran/login menempati seluruh viewport.
+  if (phase === 'MENU' || phase === 'TEAM_SETUP') {
+    return (
+      <>
+        <LandingPage
+          soundEnabled={soundEnabled}
+          onToggleSound={handleToggleSound}
+          activeSession={activeSession}
+          onStartRegistration={() => {
+            playSound('click');
+            setGameMode('adventure');
+            setPhase('TEAM_SETUP');
+          }}
+          onContinueSession={handleContinueSession}
+          onOpenDashboard={() => {
+            playSound('click');
+            setShowDashboard(true);
+          }}
+        />
+        <AnimatePresence>
+          {phase === 'TEAM_SETUP' && (
+            <TeamRegistrationModal
+              onClose={() => {
+                playSound('click');
+                setPhase('MENU');
+              }}
+              onRegister={handleTeamRegister}
+              onLogin={handleTeamLogin}
+              playSound={playSound}
+            />
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
   return (
     <div className={`min-h-screen transition-colors duration-500 ${getBgClass()} font-sans selection:bg-indigo-200 overflow-x-hidden`}>
-      {/* Background particles for menu */}
-      {(phase === 'MENU' || phase === 'TEAM_SETUP') && (
-        <FloatingParticles colors={getParticleColors()} />
-      )}
-
       {/* Subtle grid background for gameplay */}
-      {phase !== 'MENU' && phase !== 'TEAM_SETUP' && (
-        <div className="fixed inset-0 bg-grid pointer-events-none opacity-50" />
-      )}
+      <div className="fixed inset-0 bg-grid pointer-events-none opacity-50" />
 
       <div className="container mx-auto px-4 py-6 min-h-screen flex flex-col relative z-10">
 
         {/* Header */}
-        {phase !== 'MENU' && phase !== 'TEAM_SETUP' && (
           <header className="flex items-center justify-between mb-8 sticky top-0 z-40 bg-white/80 backdrop-blur-md p-2 rounded-2xl shadow-sm border border-white/50">
             {/* Team ID Card */}
             <div className="flex items-center gap-3 cursor-pointer hover:opacity-70 transition-opacity bg-indigo-50 p-2 pr-6 rounded-xl border border-indigo-100" onClick={() => { playSound('click'); setPhase('LEVEL_SELECT'); setSideNarrator(prev => ({ ...prev, visible: false })); setShowNarrator(false); }}>
@@ -3254,98 +3435,43 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            {phase !== 'VICTORY' && phase !== 'LEVEL_SELECT' && (
-              <div className="hidden sm:flex items-center gap-4 px-4">
-                <div className="flex flex-col items-end">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Status Misi</span>
-                  <span className="font-bold text-indigo-600 text-sm">{phase === 'ACTION' ? 'Evakuasi' : 'Pemulihan'}</span>
+            <div className="flex items-center gap-2">
+              {phase !== 'VICTORY' && phase !== 'LEVEL_SELECT' && (
+                <div className="hidden sm:flex items-center gap-4 px-4">
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase">Status Misi</span>
+                    <span className="font-bold text-indigo-600 text-sm">{phase === 'ACTION' ? 'Evakuasi' : 'Pemulihan'}</span>
+                  </div>
+                  <div className="h-2 w-24 bg-gray-100 rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-indigo-500"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${phase === 'ACTION' ? 50 : 100}%` }}
+                      transition={{ duration: 0.5 }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 w-24 bg-gray-100 rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-indigo-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${phase === 'ACTION' ? 50 : 100}%` }}
-                    transition={{ duration: 0.5 }}
-                  />
-                </div>
-              </div>
-            )}
+              )}
+
+              {isLevelMissionPhase && (
+                <button
+                  onClick={() => {
+                    playSound('click');
+                    setShowExitDialog(true);
+                  }}
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border-2 border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 active:scale-95"
+                  aria-label="Keluar dari misi"
+                  title="Keluar dari misi"
+                >
+                  <X size={20} />
+                </button>
+              )}
+            </div>
           </header>
-        )}
 
         {/* Content Area */}
         <main className="flex-grow flex flex-col justify-center">
           <AnimatePresence mode="wait">
-
-            {/* 1. Main Menu */}
-            {phase === 'MENU' && (
-              <MotionDiv
-                key="menu"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className="text-center text-white relative z-10"
-              >
-                <div className="mb-12 relative inline-block">
-                  <MotionDiv
-                    animate={{ rotate: [0, 5, -5, 0], scale: [1, 1.05, 1] }}
-                    transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                    className="absolute -top-16 -right-12 text-8xl filter drop-shadow-2xl"
-                  >
-                    🌏
-                  </MotionDiv>
-                  <MotionDiv
-                    initial={{ scale: 0.9, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.2 }}
-                  >
-                    <h1 className="text-6xl md:text-9xl font-display font-black tracking-tighter mb-0 text-shimmer filter drop-shadow-sm leading-none">
-                      AGENT<br />SIAGA
-                    </h1>
-                    <div className="h-2 w-full bg-white/20 rounded-full mt-4 mb-4 mx-auto max-w-[200px]"></div>
-                    <p className="text-xl md:text-2xl font-bold text-indigo-100 tracking-[0.2em] uppercase">Misi Penyelamatan Bumi</p>
-                  </MotionDiv>
-                </div>
-
-                {/* Sound toggle on menu */}
-                <div className="absolute top-4 right-4">
-                  <SoundToggle isEnabled={soundEnabled} onToggle={handleToggleSound} />
-                </div>
-
-                <MotionDiv
-                  whileHover={{ scale: 1.02 }}
-                  className="max-w-md mx-auto bg-white/10 backdrop-blur-lg p-8 rounded-[2rem] border border-white/20 shadow-2xl relative overflow-hidden group"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600/50 to-purple-600/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                  <div className="relative z-10">
-                    <p className="mb-8 text-lg font-medium leading-relaxed text-indigo-50">
-                      Halo Tim Penyelamat! Warga membutuhkan keahlian kelompok kalian. Siap berlomba dalam kebaikan?
-                    </p>
-                    <Button
-                      size="lg"
-                      fullWidth
-                      className="!bg-yellow-400 !text-yellow-900 !shadow-yellow-600 hover:!bg-yellow-300 text-xl py-4 glow-pulse"
-                      onClick={() => { playSound('click'); setGameMode('adventure'); setPhase('TEAM_SETUP'); }}
-                      playSound={() => playSound('click')}
-                    >
-                      DAFTARKAN TIM!
-                    </Button>
-                  </div>
-                </MotionDiv>
-              </MotionDiv>
-            )}
-
-            {/* 1.5 Team Registration */}
-            {phase === 'TEAM_SETUP' && (
-              <MotionDiv
-                key="team-setup"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <TeamRegistration onRegister={handleTeamRegister} playSound={playSound} />
-              </MotionDiv>
-            )}
 
             {/* 2. Level Select */}
             {phase === 'LEVEL_SELECT' && (
@@ -3370,6 +3496,22 @@ const App: React.FC = () => {
 
             {/* 3. Briefing */}
             {phase === 'BRIEFING' && (
+              showMateri ? (
+                <MateriSingkat
+                  key={`materi-${currentLevel.id}`}
+                  disasterType={currentLevel.id}
+                  color={currentLevel.color}
+                  onFinish={() => {
+                    setShowMateri(false);
+                    setPhase('ACTION');
+                  }}
+                  onSkip={() => {
+                    setShowMateri(false);
+                    setPhase('ACTION');
+                  }}
+                  playSound={playSound}
+                />
+              ) : (
               <MotionDiv
                 key="briefing"
                 initial={{ scale: 0.9, opacity: 0, y: 50 }}
@@ -3397,10 +3539,11 @@ const App: React.FC = () => {
                   </p>
                 </div>
 
-                <Button onClick={() => setPhase('ACTION')} fullWidth size="lg" className="text-lg" playSound={() => playSound('click')}>
-                  Mulai Evakuasi <ChevronRight />
+                <Button onClick={() => setShowMateri(true)} fullWidth size="lg" className="text-lg" playSound={() => playSound('click')}>
+                  Pelajari Materi Dulu <BookOpen />
                 </Button>
               </MotionDiv>
+              )
             )}
 
             {/* AI Narrator Overlay — Kapten Siaga */}
@@ -3409,6 +3552,14 @@ const App: React.FC = () => {
                 performanceData={narratorData}
                 onContinue={handleNarratorContinue}
                 playSound={playSound}
+                continueLabel={
+                  pendingNextPhase === 'VICTORY'
+                    ? 'Lihat Hasil Akhir'
+                    : pendingNextPhase === 'LEVEL_SELECT'
+                      ? 'Pilih Misi Berikutnya'
+                      : 'Lanjut Jelajah Dunia 3D'
+                }
+                onReplayMission={narratorData.phase === 'RECOVERY' ? handleReplayMission : undefined}
               />
             )}
 
@@ -3481,7 +3632,7 @@ const App: React.FC = () => {
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -100, opacity: 0 }}
               >
-                <RecoveryPhase level={currentLevel} teamName={teamName} onComplete={handlePhaseComplete} playSound={playSound} updateNarrator={updateSideNarrator} />
+                <RecoveryPhase level={currentLevel} teamName={teamName} onComplete={handleQuizComplete} playSound={playSound} updateNarrator={updateSideNarrator} />
               </MotionDiv>
             )}
 
@@ -3501,8 +3652,20 @@ const App: React.FC = () => {
         {/* Side Narrator Component rendered fixed globally */}
         <SideNarrator {...sideNarrator} />
 
+        {isLevelMissionPhase && (
+          <ExitConfirmDialog
+            open={showExitDialog}
+            onClose={() => setShowExitDialog(false)}
+            onConfirm={resetGame}
+            onExitToWorld={exitLevelToWorld}
+            onRequestOpen={() => setShowExitDialog(true)}
+            playSound={playSound}
+            description="Zona misi yang sudah selesai tetap tersimpan di dunia 3D. Tapi kalau memilih Keluar ke Menu, semua progres tim akan dihapus."
+          />
+        )}
+
         <footer className="mt-12 text-center text-gray-400 text-sm font-medium py-4">
-          Agent Siaga - Tim Adhista
+          Agent Siaga · Belajar tanggap bencana lewat petualangan.
         </footer>
       </div>
     </div>

@@ -4,6 +4,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Avatar } from '../../types';
 import {
+  GUIDE_BOARD,
+  GUIDE_BOARD_READ_RADIUS,
   INFO_BOARDS,
   INFO_BOARD_READ_RADIUS,
   MISSION_ZONES,
@@ -23,8 +25,12 @@ interface PlayerProps {
   poseRef: { current: PlayerPose };
   avatar: Avatar | null;
   teamName: string;
+  /** Saat true (mis. kartu info zona terbuka) gerak & kamera dibekukan. */
+  paused?: boolean;
   onNearZone?: (zone: MissionZone | null) => void;
   onNearBoard?: (board: InfoBoard | null) => void;
+  /** True saat pemain masuk/radius papan "Panduan Bermain" di base camp. */
+  onNearGuide?: (near: boolean) => void;
 }
 
 const MOVEMENT_KEYS = new Set([
@@ -48,8 +54,10 @@ export const Player: React.FC<PlayerProps> = ({
   poseRef,
   avatar,
   teamName,
+  paused = false,
   onNearZone,
   onNearBoard,
+  onNearGuide,
 }) => {
   const { camera, gl } = useThree();
   const group = useRef<THREE.Group>(null);
@@ -66,6 +74,7 @@ export const Player: React.FC<PlayerProps> = ({
   const pitch = useRef(0.27);
   const lastZoneRef = useRef<string | null>(null);
   const lastBoardRef = useRef<string | null>(null);
+  const nearGuideRef = useRef(false);
 
   const palette = useMemo(() => avatarPalette(avatar?.color), [avatar?.color]);
   const nameTexture = useNameTagTexture(avatar?.icon || '🕵️', teamName || 'Tim Agent', palette.main);
@@ -73,9 +82,17 @@ export const Player: React.FC<PlayerProps> = ({
   const cameraTarget = useMemo(() => new THREE.Vector3(), []);
   const lookTarget = useMemo(() => new THREE.Vector3(), []);
 
+  // Saat kartu info terbuka, pastikan tidak ada input yang "tersangkut".
+  useEffect(() => {
+    if (!paused) return;
+    keys.current.clear();
+    joystickRef.current = { x: 0, y: 0 };
+  }, [paused, joystickRef]);
+
   // Keyboard (desktop)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (paused) return;
       if (MOVEMENT_KEYS.has(e.code)) {
         keys.current.add(e.code);
         e.preventDefault();
@@ -97,7 +114,7 @@ export const Player: React.FC<PlayerProps> = ({
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', clear);
     };
-  }, []);
+  }, [paused]);
 
   // Drag untuk memutar kamera (mouse & sentuhan di area canvas)
   useEffect(() => {
@@ -108,6 +125,7 @@ export const Player: React.FC<PlayerProps> = ({
     let lastY = 0;
 
     const onDown = (event: PointerEvent) => {
+      if (paused) return;
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       dragging = true;
       pointerId = event.pointerId;
@@ -116,6 +134,7 @@ export const Player: React.FC<PlayerProps> = ({
       element.setPointerCapture(event.pointerId);
     };
     const onMove = (event: PointerEvent) => {
+      if (paused) return;
       if (!dragging || event.pointerId !== pointerId) return;
       const dx = event.clientX - lastX;
       const dy = event.clientY - lastY;
@@ -143,9 +162,12 @@ export const Player: React.FC<PlayerProps> = ({
       element.removeEventListener('pointerup', onUp);
       element.removeEventListener('pointercancel', onUp);
     };
-  }, [gl]);
+  }, [gl, paused]);
 
   useFrame((_, rawDelta) => {
+    // Kartu info zona terbuka: bekukan gerak pemain sekaligus kamera.
+    if (paused) return;
+
     const delta = Math.min(rawDelta, 0.05);
 
     // --- Input ---
@@ -234,6 +256,18 @@ export const Player: React.FC<PlayerProps> = ({
     if (nearestBoardId !== lastBoardRef.current) {
       lastBoardRef.current = nearestBoardId;
       onNearBoard?.(nearestBoard);
+    }
+
+    // Papan panduan di camp: kirim sinyal hanya saat masuk/keluar radius,
+    // supaya kartu petunjuk tidak terbuka berulang setiap frame.
+    const guideDistance = Math.hypot(
+      position.current.x - GUIDE_BOARD.position[0],
+      position.current.z - GUIDE_BOARD.position[2]
+    );
+    const isNearGuide = guideDistance < GUIDE_BOARD_READ_RADIUS;
+    if (isNearGuide !== nearGuideRef.current) {
+      nearGuideRef.current = isNearGuide;
+      onNearGuide?.(isNearGuide);
     }
 
     // --- Animasi langkah ---

@@ -1012,3 +1012,42 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* === Landing Page / Auth / Dashboard polish === */
+
+/* Nuansa cahaya lembut yang bergerak pelan di latar halaman awal */
+@keyframes heroAurora {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.55; }
+  50% { transform: translate3d(2%, -3%, 0) scale(1.06); opacity: 0.8; }
+}
+
+.hero-aurora {
+  animation: heroAurora 12s ease-in-out infinite;
+}
+
+/* Judul utama: kilau halus yang melintang */
+@keyframes heroShine {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.hero-title-shine {
+  background-size: 200% auto;
+  animation: heroShine 6s linear infinite;
+}
+
+/* Pastikan modal/login tetap enak dipakai di layar kecil */
+@media (max-width: 640px) {
+  .auth-card {
+    border-radius: 1.5rem;
+  }
+}
+
+/* Kurangi efek gerak bagi pengguna yang meminta reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-aurora,
+  .hero-title-shine {
+    animation: none;
+  }
+}

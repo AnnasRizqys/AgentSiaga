@@ -1,21 +1,23 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Sky } from '@react-three/drei';
+import { Sky, Sparkles } from '@react-three/drei';
+import { AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle,
   BookOpen,
-  CheckCircle2,
-  ChevronRight,
+  Compass,
   Gamepad2,
-  LogOut,
+  Home,
+  ListChecks,
+  Play,
   RefreshCw,
+  RotateCcw,
   Shield,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
 import type { Avatar, DisasterType } from '../../types';
-import { WORLD_FACTS } from '../../constants';
 import { Joystick } from './Joystick';
 import {
   INFO_BOARDS,
@@ -27,22 +29,33 @@ import {
   type MoveVector,
   type PlayerPose,
 } from './worldConfig';
+import { GuideBoard } from './GuideBoard';
 import { InfoBoard as InfoBoardMesh } from './InfoBoard';
 import { KaptenBillboard } from './KaptenBillboard';
 import { Player } from './Player';
 import { NatureEnvironment } from './NatureEnvironment';
 import { ZoneMarker } from './ZoneMarker';
+import { ZoneInfoCard } from './ZoneInfoCard';
+import { ZoneProgressCard } from './ZoneProgressCard';
+import { ZONE_INFO } from './zoneInfo';
 import { WorldLoadingScreen } from './WorldLoadingScreen';
+import { ExitConfirmDialog } from '../ExitConfirmDialog';
+import { LearningObjectivesModal } from '../LearningObjectivesModal';
+import { GuideCard } from './GuideCard';
+import { WelcomeModal } from './WelcomeModal';
 
 interface World3DProps {
   teamName: string;
   avatar: Avatar | null;
   score: number;
   completedZones: DisasterType[];
+  /** Zona yang papan informasinya sudah dibaca pada sesi ini. */
+  readZones: DisasterType[];
   soundEnabled: boolean;
   onToggleSound: () => void;
   onClassicMode: () => void;
   onStartMission: (zoneId: DisasterType) => void;
+  onMarkZoneRead: (zoneId: DisasterType) => void;
   onExit?: () => void;
   playSound?: (type: string) => void;
 }
@@ -53,9 +66,14 @@ interface WorldSceneProps {
   avatar: Avatar | null;
   teamName: string;
   completedZones: DisasterType[];
-  kaptenMessage: string;
+  paused: boolean;
   onNearZone: (zone: MissionZone | null) => void;
   onNearBoard: (board: InfoBoard | null) => void;
+  onNearGuide: (near: boolean) => void;
+  /** Klik langsung pada tiang/papan zona di dunia 3D. */
+  onSelectZone: (zone: MissionZone) => void;
+  /** Klik pada papan "Panduan Bermain" di base camp. */
+  onOpenGuide: () => void;
 }
 
 const WorldScene: React.FC<WorldSceneProps> = ({
@@ -64,38 +82,71 @@ const WorldScene: React.FC<WorldSceneProps> = ({
   avatar,
   teamName,
   completedZones,
-  kaptenMessage,
+  paused,
   onNearZone,
   onNearBoard,
+  onNearGuide,
+  onSelectZone,
+  onOpenGuide,
 }) => (
   <>
-    <Sky distance={180} sunPosition={[60, 32, 45]} turbidity={6} rayleigh={0.55} mieCoefficient={0.005} mieDirectionalG={0.8} />
-    <fog attach="fog" args={['#cfe4db', 62, 165]} />
+    {/* Langit cerah & atmosfer segar supaya lembah terlihat hidup. */}
+    <Sky
+      distance={200}
+      sunPosition={[58, 30, -28]}
+      turbidity={3.2}
+      rayleigh={1.05}
+      mieCoefficient={0.012}
+      mieDirectionalG={0.86}
+      inclination={0.48}
+      azimuth={0.22}
+    />
+    <fog attach="fog" args={['#dcefe6', 74, 190]} />
 
-    <hemisphereLight args={['#d8efff', '#3f6b2f', 1.05]} />
-    <directionalLight position={[30, 42, 20]} intensity={1.65} color="#fff4df" />
-    <directionalLight position={[-22, 20, -16]} intensity={0.35} color="#bfe3ff" />
-    <ambientLight intensity={0.22} />
+    <hemisphereLight args={['#eaf6ff', '#4b7a3a', 1.35]} />
+    <directionalLight position={[38, 52, 26]} intensity={2.1} color="#fff6e4" />
+    <directionalLight position={[-26, 24, -18]} intensity={0.55} color="#cfe8ff" />
+    <ambientLight intensity={0.3} />
+    {/* Kilau halus memberi kesan udara pagi yang berembun. */}
+    <Sparkles count={70} scale={[64, 16, 64]} size={2.2} speed={0.25} color="#fff8cf" opacity={0.45} />
 
     <NatureEnvironment />
 
     {MISSION_ZONES.map((zone) => (
-      <ZoneMarker key={zone.id} zone={zone} completed={completedZones.includes(zone.id)} />
+      <ZoneMarker
+        key={zone.id}
+        zone={zone}
+        completed={completedZones.includes(zone.id)}
+        onSelect={() => onSelectZone(zone)}
+      />
     ))}
 
-    {INFO_BOARDS.map((board) => (
-      <InfoBoardMesh key={board.id} board={board} />
-    ))}
+    {INFO_BOARDS.map((board) => {
+      const zone = MISSION_ZONES.find((item) => item.id === board.zoneId);
+      return (
+        <InfoBoardMesh
+          key={board.id}
+          board={board}
+          completed={completedZones.includes(board.zoneId)}
+          onSelect={zone ? () => onSelectZone(zone) : undefined}
+        />
+      );
+    })}
 
     <KaptenBillboard />
+
+    {/* Papan panduan di area terbuka base camp — bebas dibuka kapan saja. */}
+    <GuideBoard onSelect={onOpenGuide} />
 
     <Player
       joystickRef={joystickRef}
       poseRef={poseRef}
       avatar={avatar}
       teamName={teamName}
+      paused={paused}
       onNearZone={onNearZone}
       onNearBoard={onNearBoard}
+      onNearGuide={onNearGuide}
     />
   </>
 );
@@ -112,8 +163,7 @@ const mapZ = (z: number) =>
 const Minimap: React.FC<{
   poseRef: { current: PlayerPose };
   completedZones: DisasterType[];
-  nextZone?: MissionZone;
-}> = ({ poseRef, completedZones, nextZone }) => {
+}> = ({ poseRef, completedZones }) => {
   const dotRef = useRef<HTMLDivElement>(null);
   const arrowRef = useRef<HTMLDivElement>(null);
 
@@ -135,9 +185,9 @@ const Minimap: React.FC<{
   }, [poseRef]);
 
   return (
-    <div className="pointer-events-none flex flex-col items-end gap-1.5">
+    <div className="pointer-events-none relative z-30 flex flex-col items-end gap-2">
       <div
-        className="relative h-24 w-24 overflow-hidden rounded-full border-[3px] border-white/85 bg-emerald-200/90 shadow-xl ring-2 ring-slate-900/10 backdrop-blur-sm sm:h-32 sm:w-32"
+        className="relative h-20 w-20 overflow-hidden rounded-full border-[3px] border-white/85 bg-emerald-200/90 shadow-xl ring-2 ring-slate-900/10 backdrop-blur-sm sm:h-32 sm:w-32"
         title="Minimap alam"
       >
         {/* Perbukitan & danau */}
@@ -161,26 +211,30 @@ const Minimap: React.FC<{
           U
         </span>
 
-        {/* Zona misi */}
+        {/* Ikon zona misi (selesai = centang) */}
         {MISSION_ZONES.map((zone) => {
           const done = completedZones.includes(zone.id);
-          const isNext = nextZone?.id === zone.id;
           return (
             <div
               key={zone.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2"
+              className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
               style={{ left: `${mapX(zone.position[0])}%`, top: `${mapZ(zone.position[2])}%` }}
               title={`${zone.name}${done ? ' (selesai)' : ''}`}
             >
-              {isNext && (
-                <span className="absolute -inset-1.5 animate-ping rounded-full bg-yellow-300/90" />
-              )}
               <div
-                className={`relative h-2.5 w-2.5 rounded-full border-2 border-white shadow sm:h-3 sm:w-3 ${
-                  done ? 'bg-emerald-500' : ''
+                className={`relative flex h-[18px] w-[18px] items-center justify-center rounded-full border-2 shadow sm:h-6 sm:w-6 ${
+                  done
+                    ? 'border-emerald-600 bg-emerald-500 text-white'
+                    : 'border-white bg-white/95'
                 }`}
-                style={done ? undefined : { backgroundColor: zone.color }}
-              />
+                style={done ? undefined : { borderColor: zone.color }}
+              >
+                {done ? (
+                  <span className="text-[10px] font-black leading-none sm:text-xs">✓</span>
+                ) : (
+                  <span className="text-[10px] leading-none sm:text-xs">{zone.icon}</span>
+                )}
+              </div>
             </div>
           );
         })}
@@ -196,21 +250,6 @@ const Minimap: React.FC<{
             <div className="absolute -top-1 left-1/2 h-0 w-0 -translate-x-1/2 border-x-[4px] border-b-[6px] border-x-transparent border-b-indigo-600" />
           </div>
         </div>
-      </div>
-
-      <div className="flex max-w-[150px] items-center gap-1 rounded-full border border-white/60 bg-white/90 px-2 py-1 shadow-md backdrop-blur-sm">
-        {nextZone ? (
-          <>
-            <span className="text-xs leading-none">{nextZone.icon}</span>
-            <span className="truncate text-[9px] font-black text-slate-600 sm:text-[10px]">
-              {nextZone.name}
-            </span>
-          </>
-        ) : (
-          <span className="flex items-center gap-1 text-[9px] font-black text-emerald-600 sm:text-[10px]">
-            <CheckCircle2 size={11} /> Semua selesai
-          </span>
-        )}
       </div>
     </div>
   );
@@ -291,10 +330,12 @@ export const World3D: React.FC<World3DProps> = ({
   avatar,
   score,
   completedZones,
+  readZones,
   soundEnabled,
   onToggleSound,
   onClassicMode,
   onStartMission,
+  onMarkZoneRead,
   onExit,
   playSound,
 }) => {
@@ -305,12 +346,22 @@ export const World3D: React.FC<World3DProps> = ({
     yaw: 0,
   });
   const [nearZone, setNearZone] = useState<MissionZone | null>(null);
+  const [activeZone, setActiveZone] = useState<MissionZone | null>(null);
   const [nearBoard, setNearBoard] = useState<InfoBoard | null>(null);
-  const [dismissedBoardId, setDismissedBoardId] = useState<string | null>(null);
-  const [tip, setTip] = useState<{ text: string; key: number } | null>(null);
+  /** Sapaan Kapten Siaga — tampil setiap kali masuk ke Dunia 3D. */
+  const [welcomeOpen, setWelcomeOpen] = useState(true);
   const [ready, setReady] = useState(false);
   const [webglOk] = useState(webglSupported);
   const [compact, setCompact] = useState(false);
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [controlsDismissed, setControlsDismissed] = useState(false);
+  /** Panel daftar misi (akses cepat ke keempat mini-game + replay). */
+  const [missionListOpen, setMissionListOpen] = useState(false);
+  /** Modal Tujuan Pembelajaran (dibuka dari tombol "TP" di HUD). */
+  const [objectivesOpen, setObjectivesOpen] = useState(false);
+  /** Kartu Panduan Bermain (papan di base camp). */
+  const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
     const media = window.matchMedia('(pointer: coarse)');
@@ -338,11 +389,30 @@ export const World3D: React.FC<World3DProps> = ({
     [completedZones]
   );
 
-  const objective = useMemo(() => {
-    if (!nextZone) return 'Semua zona misi selesai!';
-    const remaining = MISSION_ZONES.length - completedZones.length;
-    return `Sisa ${remaining} zona • berikutnya ${nextZone.name}`;
-  }, [completedZones.length, nextZone]);
+  // Panel KONTROL pudar otomatis: setelah pemain mulai berjalan atau ~10 detik.
+  useEffect(() => {
+    if (controlsDismissed) return;
+    const startX = poseRef.current.x;
+    const startZ = poseRef.current.z;
+    const dismiss = () => {
+      setControlsVisible(false);
+      setControlsDismissed(true);
+    };
+    const timer = window.setTimeout(dismiss, 10000);
+    const walkTimer = window.setInterval(() => {
+      const moved = Math.hypot(poseRef.current.x - startX, poseRef.current.z - startZ);
+      if (moved > 0.8) dismiss();
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(walkTimer);
+    };
+  }, [controlsDismissed]);
+
+  const toggleControls = useCallback(() => {
+    setControlsDismissed(true);
+    setControlsVisible((visible) => !visible);
+  }, []);
 
   const handleNearZone = useCallback(
     (zone: MissionZone | null) => {
@@ -352,63 +422,162 @@ export const World3D: React.FC<World3DProps> = ({
     [playSound]
   );
 
-  const nearZoneDone = nearZone ? completedZones.includes(nearZone.id) : false;
+  const zoneCardOpen = activeZone !== null;
+
+  const openZoneCard = useCallback(
+    (zone: MissionZone) => {
+      playSound?.('click');
+      // Membuka kartu berarti papan zona tersebut sudah dibaca.
+      onMarkZoneRead(zone.id);
+      setActiveZone(zone);
+    },
+    [onMarkZoneRead, playSound]
+  );
+
+  const closeZoneCard = useCallback(() => {
+    setActiveZone(null);
+  }, []);
+
+  // Klik penanda / papan di dunia 3D → buka kartu misi zona tersebut.
+  const handleSelectZone = useCallback(
+    (zone: MissionZone) => {
+      setMissionListOpen(false);
+      joystickRef.current = { x: 0, y: 0 };
+      openZoneCard(zone);
+    },
+    [openZoneCard]
+  );
+
+  // Daftar misi dibuka langsung dari HUD; tiap tombol masuk ke mini-game 2D.
+  const startFromList = useCallback(
+    (zoneId: DisasterType) => {
+      setMissionListOpen(false);
+      setActiveZone(null);
+      onStartMission(zoneId);
+    },
+    [onStartMission]
+  );
+
+  // Misi yang sudah selesai tetap bisa dimainkan ulang kapan saja (replay).
+  const startMissionFromCard = useCallback(
+    (zoneId: DisasterType) => {
+      setActiveZone(null);
+      setMissionListOpen(false);
+      onStartMission(zoneId);
+    },
+    [onStartMission]
+  );
 
   const handleNearBoard = useCallback((board: InfoBoard | null) => {
     setNearBoard(board);
-    if (!board) setDismissedBoardId(null);
   }, []);
 
-  const kaptenMessage = useMemo(() => {
-    if (completedZones.length >= MISSION_ZONES.length) {
-      return 'Semua zona selesai! Kamu luar biasa!';
-    }
-    return `Halo ${teamName || 'Agen'}! Cari tiang bercahaya dan baca papan fakta ya!`;
-  }, [completedZones.length, teamName]);
+  // Mendekati papan panduan di camp langsung membuka kartu petunjuk (sekali
+  // masuk radius). Callback Player hanya dipanggil saat status berubah.
+  const handleNearGuide = useCallback((near: boolean) => {
+    if (!near) return;
+    setMissionListOpen(false);
+    setExitDialogOpen(false);
+    setObjectivesOpen(false);
+    setGuideOpen(true);
+  }, []);
 
-  useEffect(() => {
-    let message: string;
-    if (completedZones.length >= MISSION_ZONES.length) {
-      message = 'Semua zona selesai! Misi penyelamatan bumi berhasil!';
-    } else if (nearBoard) {
-      message = 'Papan fakta! Baca dulu, lalu cari tiang bercahaya.';
-    } else if (nearZone) {
-      message = nearZoneDone
-        ? `${nearZone.name} sudah selesai! Cari zona berikutnya.`
-        : `Kamu di zona ${nearZone.name}. Klik Mulai Misi kalau siap!`;
-    } else {
-      const next = MISSION_ZONES.find((zone) => !completedZones.includes(zone.id));
-      message = next
-        ? `Halo ${teamName || 'Agen'}! Cari tiang bercahaya. Berikutnya: ${next.name}.`
-        : 'Semua zona selesai!';
-    }
-    setTip({ text: message, key: Date.now() });
-    const timer = window.setTimeout(() => setTip(null), 9000);
-    return () => window.clearTimeout(timer);
-  }, [completedZones, nearBoard, nearZone, nearZoneDone, teamName]);
-
-  const boardFacts = nearBoard ? WORLD_FACTS[nearBoard.zoneId] : null;
-  const boardColor =
-    (nearBoard && MISSION_ZONES.find((zone) => zone.id === nearBoard.zoneId)?.color) || '#4f46e5';
-
-  const startMission = useCallback(() => {
-    if (!nearZone || completedZones.includes(nearZone.id)) return;
+  const openGuide = useCallback(() => {
     playSound?.('click');
-    onStartMission(nearZone.id);
-  }, [nearZone, completedZones, onStartMission, playSound]);
+    setMissionListOpen(false);
+    setExitDialogOpen(false);
+    setObjectivesOpen(false);
+    setGuideOpen(true);
+  }, [playSound]);
 
-  // Tekan E untuk memulai misi saat berdiri di zona (desktop).
+  const openObjectives = useCallback(() => {
+    playSound?.('click');
+    setMissionListOpen(false);
+    setExitDialogOpen(false);
+    setGuideOpen(false);
+    setObjectivesOpen(true);
+  }, [playSound]);
+
+  const closeGuide = useCallback(() => setGuideOpen(false), []);
+  const closeObjectives = useCallback(() => setObjectivesOpen(false), []);
+  const closeWelcome = useCallback(() => {
+    playSound?.('click');
+    setWelcomeOpen(false);
+  }, [playSound]);
+
+  const nearBoardZone = useMemo(
+    () =>
+      nearBoard
+        ? MISSION_ZONES.find((zone) => zone.id === nearBoard.zoneId) || null
+        : null,
+    [nearBoard]
+  );
+
+  // Target baca: papan informasi diutamakan, lalu tiang zona.
+  const readTargetZone = nearBoardZone || nearZone;
+
+  // Tekan E di dekat papan/tiang zona = buka kartu informasi, bukan langsung
+  // memulai misi. Misi hanya dimulai dari tombol "Mulai Misi" di kartu.
   useEffect(() => {
-    if (!nearZone || nearZoneDone) return;
+    if (!readTargetZone || zoneCardOpen || exitDialogOpen || guideOpen || objectivesOpen || welcomeOpen)
+      return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === 'KeyE') {
-        event.preventDefault();
-        startMission();
-      }
+      if (event.code !== 'KeyE' || event.repeat) return;
+      event.preventDefault();
+      openZoneCard(readTargetZone);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [nearZone, nearZoneDone, startMission]);
+  }, [
+    readTargetZone,
+    zoneCardOpen,
+    exitDialogOpen,
+    guideOpen,
+    objectivesOpen,
+    welcomeOpen,
+    openZoneCard,
+  ]);
+
+  // Kartu zona dan dialog lain tidak boleh tampil bersamaan.
+  useEffect(() => {
+    if (zoneCardOpen) {
+      setExitDialogOpen(false);
+      setMissionListOpen(false);
+      setGuideOpen(false);
+      setObjectivesOpen(false);
+    }
+    if (welcomeOpen) {
+      setExitDialogOpen(false);
+      setMissionListOpen(false);
+      setGuideOpen(false);
+      setObjectivesOpen(false);
+      setActiveZone(null);
+    }
+  }, [zoneCardOpen, welcomeOpen]);
+
+  // Lepaskan input joystick saat kartu petunjuk/tujuan atau popup sapaan terbuka.
+  useEffect(() => {
+    if (!guideOpen && !objectivesOpen && !welcomeOpen) return;
+    joystickRef.current = { x: 0, y: 0 };
+  }, [guideOpen, objectivesOpen, welcomeOpen]);
+
+  // Esc menutup panel daftar misi.
+  useEffect(() => {
+    if (!missionListOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setMissionListOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [missionListOpen]);
+
+  // Lepaskan input joystick saat kartu terbuka supaya pemain tidak meluncur.
+  useEffect(() => {
+    if (!zoneCardOpen) return;
+    joystickRef.current = { x: 0, y: 0 };
+  }, [zoneCardOpen]);
 
   const handleSound = () => {
     onToggleSound();
@@ -438,9 +607,12 @@ export const World3D: React.FC<World3DProps> = ({
                 avatar={avatar}
                 teamName={teamName}
                 completedZones={completedZones}
-                kaptenMessage={kaptenMessage}
+                paused={zoneCardOpen || missionListOpen || guideOpen || objectivesOpen || welcomeOpen}
                 onNearZone={handleNearZone}
                 onNearBoard={handleNearBoard}
+                onNearGuide={handleNearGuide}
+                onSelectZone={handleSelectZone}
+                onOpenGuide={openGuide}
               />
             </Suspense>
           </Canvas>
@@ -483,34 +655,41 @@ export const World3D: React.FC<World3DProps> = ({
               <span className="font-mono text-sm font-black">{score}</span>
             </div>
 
-            <div className="flex w-max items-center gap-2 rounded-xl border border-white/50 bg-white/90 px-2.5 py-1.5 shadow-md backdrop-blur-sm">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
-                Misi
-              </span>
-              <span className="font-mono text-xs font-black text-slate-800">
-                {completedZones.length}/{MISSION_ZONES.length}
-              </span>
-              <div className="flex items-center gap-1">
-                {MISSION_ZONES.map((zone) => {
-                  const done = completedZones.includes(zone.id);
-                  return (
-                    <span
-                      key={zone.id}
-                      className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] ${
-                        done ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500'
-                      }`}
-                      title={`${zone.name}${done ? ' (selesai)' : ''}`}
-                    >
-                      {done ? '✓' : zone.icon}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Daftar misi dipindah ke kiri agar kanan atas hanya: TP · Suara · Beranda */}
+            <button
+              onClick={() => {
+                playSound?.('click');
+                setMissionListOpen((open) => !open);
+              }}
+              className={`pointer-events-auto flex w-max items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-black shadow-md backdrop-blur-sm transition-colors active:scale-95 ${
+                missionListOpen
+                  ? 'border-indigo-300 bg-indigo-600 text-white'
+                  : 'border-white/50 bg-white/90 text-slate-700 hover:bg-white'
+              }`}
+              aria-expanded={missionListOpen}
+              aria-label="Buka daftar misi"
+              title="Daftar misi · bisa diulang kapan saja"
+            >
+              {missionListOpen ? <X size={15} /> : <ListChecks size={15} />}
+              Misi
+            </button>
+
           </div>
 
           <div className="flex flex-col items-end gap-2">
             <div className="pointer-events-auto flex items-center gap-2">
+              {/* a. Paling kiri: Tujuan Pembelajaran */}
+              <button
+                onClick={openObjectives}
+                className="flex h-11 min-h-[44px] items-center justify-center gap-1 rounded-2xl border border-emerald-200 bg-emerald-50 px-2 text-[10px] font-black text-emerald-700 shadow-lg backdrop-blur-sm transition-colors hover:bg-emerald-100 active:scale-95 sm:px-3 sm:text-xs"
+                aria-label="Buka tujuan pembelajaran"
+                title="Tujuan Pembelajaran"
+              >
+                <BookOpen size={16} className="flex-shrink-0 sm:size-[18px]" />
+                <span className="whitespace-nowrap">Tujuan Pembelajaran</span>
+              </button>
+
+              {/* b. Tengah: Suara */}
               <button
                 onClick={handleSound}
                 className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/90 text-slate-700 shadow-lg backdrop-blur-sm transition-colors hover:bg-white active:scale-95"
@@ -519,219 +698,260 @@ export const World3D: React.FC<World3DProps> = ({
               >
                 {soundEnabled ? <Volume2 size={21} /> : <VolumeX size={21} className="text-slate-400" />}
               </button>
+
+              {/* c. Paling kanan: Beranda (menggantikan tombol Keluar) */}
               {onExit && (
                 <button
                   onClick={() => {
                     playSound?.('click');
-                    onExit();
+                    setExitDialogOpen(true);
                   }}
                   className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/90 text-slate-700 shadow-lg backdrop-blur-sm transition-colors hover:bg-white active:scale-95"
-                  aria-label="Kembali ke menu"
-                  title="Kembali ke menu"
+                  aria-label="Kembali ke beranda"
+                  title="Beranda"
                 >
-                  <LogOut size={20} />
+                  <Home size={21} />
                 </button>
               )}
-              <button
-                onClick={() => {
-                  playSound?.('click');
-                  onClassicMode();
-                }}
-                className="hidden h-11 items-center justify-center gap-1.5 rounded-2xl border-2 border-white/70 bg-slate-900/75 px-3 text-sm font-black text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900 active:scale-95 sm:flex sm:px-4"
-              >
-                <Gamepad2 size={19} className="text-yellow-300" />
-                <span>Mode Klasik</span>
-              </button>
             </div>
 
-            <Minimap poseRef={poseRef} completedZones={completedZones} nextZone={nextZone} />
+            <Minimap poseRef={poseRef} completedZones={completedZones} />
           </div>
         </div>
       </div>
 
-      {/* ---------- PESAN KAPTEN SIAGA ---------- */}
-      {tip && ready && (
-        <div className="pointer-events-none absolute inset-x-0 top-[158px] z-20 flex justify-center px-3 sm:top-24">
-          <div
-            key={tip.key}
-            className="pointer-events-auto flex max-w-md items-start gap-2 rounded-2xl border-2 border-amber-300 bg-white/95 px-2.5 py-2 shadow-xl backdrop-blur-sm"
-          >
-            <img
-              src="/assets/kapten-idle.png"
-              alt="Kapten Siaga"
-              className="h-10 w-10 flex-shrink-0 object-contain sm:h-12 sm:w-12"
-              style={{ imageRendering: 'pixelated' }}
-            />
-            <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">
-                Kapten Siaga
-              </p>
-              <p className="text-[11px] font-bold leading-snug text-slate-700 sm:text-xs">
-                {tip.text}
-              </p>
+      {/* ---------- PANEL DAFTAR MISI (akses cepat + replay) ---------- */}
+      {missionListOpen && (
+        <div className="pointer-events-auto absolute right-3 top-[76px] z-40 w-[min(92vw,330px)] rounded-3xl border-2 border-white bg-white/95 p-3 shadow-2xl backdrop-blur-md sm:right-4 sm:top-[86px]">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <div className="flex items-center gap-1.5">
+              <Compass size={18} className="text-indigo-600" />
+              <div className="leading-tight">
+                <p className="font-display text-sm font-black text-slate-800">Pusat Misi</p>
+                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Pilih zona · bisa diulang
+                </p>
+              </div>
             </div>
             <button
-              onClick={() => setTip(null)}
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-              aria-label="Tutup pesan Kapten Siaga"
+              type="button"
+              onClick={() => {
+                playSound?.('click');
+                setMissionListOpen(false);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"
+              aria-label="Tutup daftar misi"
             >
-              <X size={14} />
+              <X size={16} />
             </button>
           </div>
+
+          <div className="max-h-[48vh] space-y-1.5 overflow-y-auto pr-0.5">
+            {MISSION_ZONES.map((zone) => {
+              const done = completedZones.includes(zone.id);
+              const isNext = nextZone?.id === zone.id;
+              return (
+                <div
+                  key={zone.id}
+                  className={`flex items-center gap-2 rounded-2xl border-2 p-2 ${
+                    isNext && !done ? 'border-amber-300 bg-amber-50' : 'border-slate-100 bg-slate-50'
+                  }`}
+                >
+                  <span
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-lg shadow-inner"
+                    style={{ backgroundColor: `${zone.color}25` }}
+                  >
+                    {zone.icon}
+                  </span>
+                  <div className="min-w-0 flex-1 leading-tight">
+                    <p className="truncate text-xs font-black text-slate-800">
+                      {ZONE_INFO[zone.id].title}
+                    </p>
+                    <p className="text-[9px] font-black uppercase tracking-wider" style={{ color: zone.color }}>
+                      {ZONE_INFO[zone.id].code} · {done ? 'Selesai' : isNext ? 'Rekomendasi' : 'Tersedia'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => startFromList(zone.id)}
+                    className={`flex h-9 flex-shrink-0 items-center gap-1 rounded-xl px-2 text-[11px] font-black text-white shadow-md transition active:scale-95 ${
+                      done ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                    }`}
+                    title={done ? `Mainkan ulang ${zone.name}` : `Mulai misi ${zone.name}`}
+                  >
+                    {done ? <RotateCcw size={13} /> : <Play size={13} fill="currentColor" />}
+                    {done ? 'Ulangi' : 'Mainkan'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-center text-[9px] font-bold text-slate-400">
+            Tips: klik langsung tiang bercahaya atau papan fakta di peta juga bisa membuka misi.
+          </p>
         </div>
       )}
 
-      {/* ---------- PANEL ZONA MISI ---------- */}
-      {nearZone && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-44 z-20 flex justify-center px-3 sm:bottom-28">
+      {/* ---------- PETUNJUK BACA (papan informasi / tiang zona) ---------- */}
+      {readTargetZone && !zoneCardOpen && !exitDialogOpen && !welcomeOpen && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-32 z-20 flex justify-center px-3 sm:bottom-24">
           <div
-            className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-[1.75rem] border-4 bg-white/95 shadow-2xl backdrop-blur-md"
-            style={{ borderColor: nearZoneDone ? '#10b981' : nearZone.color }}
+            className="pointer-events-auto flex max-w-[calc(100vw-1.5rem)] items-center gap-2 rounded-full border-2 bg-white/95 py-1.5 pl-2 pr-2.5 shadow-xl backdrop-blur-md"
+            style={{ borderColor: readTargetZone.color }}
           >
-            <div className="flex items-center gap-3 px-4 pt-3">
-              <div
-                className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl text-3xl"
-                style={{ backgroundColor: `${nearZone.color}22` }}
+            <span
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-lg"
+              style={{ backgroundColor: `${readTargetZone.color}22` }}
+              aria-hidden="true"
+            >
+              {readTargetZone.icon}
+            </span>
+            <div className="min-w-0 leading-tight">
+              <p
+                className="text-[9px] font-black uppercase tracking-widest"
+                style={{ color: readTargetZone.color }}
               >
-                {nearZoneDone ? '✅' : nearZone.icon}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p
-                  className="text-[10px] font-black uppercase tracking-widest"
-                  style={{ color: nearZoneDone ? '#059669' : nearZone.color }}
-                >
-                  {nearZoneDone ? 'Zona selesai' : 'Zona misi'}
-                </p>
-                <h3 className="truncate text-lg font-black leading-tight text-slate-800">
-                  {nearZone.name}
-                </h3>
-                <p className="line-clamp-2 text-[11px] font-medium leading-snug text-slate-500">
-                  {nearZone.description}
-                </p>
-              </div>
+                {nearBoard ? 'Papan informasi' : 'Tiang zona'} • {ZONE_INFO[readTargetZone.id].code}
+              </p>
+              <p className="max-w-[42vw] truncate text-xs font-black text-slate-800 sm:max-w-none">
+                {ZONE_INFO[readTargetZone.id].title}
+              </p>
             </div>
 
-            {nearZoneDone ? (
-              <div className="m-3 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-sm font-black text-emerald-700">
-                <CheckCircle2 size={18} /> Misi selesai — skor sudah masuk
-              </div>
-            ) : (
+            {compact ? (
               <button
-                onClick={startMission}
-                className="m-3 flex w-[calc(100%-1.5rem)] items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-lg font-black text-white shadow-lg transition-transform active:scale-[0.98]"
-                style={{ backgroundColor: nearZone.color }}
+                type="button"
+                onClick={() => openZoneCard(readTargetZone)}
+                className="ml-1 flex min-h-[40px] flex-shrink-0 items-center justify-center gap-1 rounded-full bg-emerald-500 px-3 text-sm font-black text-white shadow-md transition-transform active:scale-95"
+                aria-label={`Baca informasi ${ZONE_INFO[readTargetZone.id].title}`}
               >
-                Mulai Misi <ChevronRight size={22} />
-                <span className="hidden rounded-md bg-white/25 px-1.5 py-0.5 text-[10px] font-black sm:inline">
-                  E
-                </span>
+                <BookOpen size={16} />
+                Baca
               </button>
+            ) : (
+              <p className="ml-1 flex flex-shrink-0 items-center gap-1 rounded-full bg-slate-900/85 px-2.5 py-1 text-[11px] font-bold text-white">
+                Tekan
+                <kbd className="rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-black">E</kbd>
+                untuk membaca
+              </p>
             )}
           </div>
         </div>
       )}
 
-      {/* ---------- PANEL PAPAN INFORMASI ---------- */}
-      {nearBoard && boardFacts && !nearZone && dismissedBoardId !== nearBoard.id && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-44 z-20 flex justify-center px-3 sm:bottom-28">
-          <div
-            className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-[1.75rem] border-4 bg-white/95 shadow-2xl backdrop-blur-md"
-            style={{ borderColor: boardColor }}
-          >
-            <div className="flex items-center gap-2.5 px-4 pt-3">
+      {/* ---------- PROGRES & KONTROL BAWAH ---------- */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 p-2 sm:p-4"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="relative flex items-end justify-between gap-2">
+          <ZoneProgressCard
+            completedZones={completedZones}
+            readZones={readZones}
+            nextZone={nextZone}
+          />
+
+          {/* HP: joystick pindah ke kanan supaya tidak menutupi kartu progres. */}
+          {compact && <Joystick valueRef={joystickRef} />}
+
+          {/* Desktop: petunjuk kontrol di tengah-bawah, memudar setelah 10 detik. */}
+          {!compact && (
+            <div className="absolute bottom-0 left-1/2 flex -translate-x-1/2 items-center gap-2">
               <div
-                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl text-2xl"
-                style={{ backgroundColor: `${boardColor}22` }}
+                className={`pointer-events-auto rounded-2xl border border-white/25 bg-slate-900/60 px-4 py-3 text-white shadow-xl backdrop-blur-sm transition-all duration-500 ${
+                  controlsVisible
+                    ? 'translate-y-0 opacity-100'
+                    : 'pointer-events-none translate-y-2 opacity-0'
+                }`}
               >
-                {boardFacts.icon}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p
-                  className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest"
-                  style={{ color: boardColor }}
-                >
-                  <BookOpen size={11} /> Papan informasi
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200">
+                  Kontrol
                 </p>
-                <h3 className="truncate text-base font-black leading-tight text-slate-800 sm:text-lg">
-                  {boardFacts.title}
-                </h3>
+                <p className="mt-1 text-sm font-bold">
+                  <span className="rounded bg-white/20 px-1.5 py-0.5">W A S D</span> atau{' '}
+                  <span className="rounded bg-white/20 px-1.5 py-0.5">← ↑ ↓ →</span> untuk berjalan
+                </p>
+                <p className="text-xs font-medium text-white/70">
+                  Klik tiang / papan zona atau tombol <b className="text-amber-300">Misi</b> untuk masuk misi
+                </p>
               </div>
               <button
-                onClick={() => setDismissedBoardId(nearBoard.id)}
-                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 border-slate-200 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600"
-                aria-label="Tutup papan informasi"
+                onClick={() => {
+                  playSound?.('click');
+                  toggleControls();
+                }}
+                className="pointer-events-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-white/50 bg-slate-900/60 text-sm font-black text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900/80 active:scale-95"
+                aria-label={controlsVisible ? 'Sembunyikan petunjuk kontrol' : 'Tampilkan petunjuk kontrol'}
+                aria-expanded={controlsVisible}
+                title={controlsVisible ? 'Sembunyikan petunjuk kontrol' : 'Tampilkan petunjuk kontrol'}
               >
-                <X size={16} />
+                ?
               </button>
             </div>
-
-            <ol className="max-h-[34vh] space-y-2 overflow-y-auto px-4 pb-4 pt-2.5">
-              {boardFacts.facts.map((fact, index) => (
-                <li key={index} className="flex gap-2">
-                  <span
-                    className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white"
-                    style={{ backgroundColor: boardColor }}
-                  >
-                    {index + 1}
-                  </span>
-                  <span className="text-[11px] font-bold leading-snug text-slate-700 sm:text-sm">
-                    {fact}
-                  </span>
-                </li>
-              ))}
-            </ol>
-
-            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-2 text-[10px] font-bold text-slate-400">
-              Dekati papan untuk membaca • dunia Jelajah Alam Siaga
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---------- KONTROL BAWAH ---------- */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 sm:p-5"
-        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
-      >
-        {compact ? (
-          <Joystick valueRef={joystickRef} />
-        ) : (
-          <div className="pointer-events-auto rounded-2xl border border-white/25 bg-slate-900/60 px-4 py-3 text-white shadow-xl backdrop-blur-sm">
-            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200">
-              Kontrol
-            </p>
-            <p className="mt-1 text-sm font-bold">
-              <span className="rounded bg-white/20 px-1.5 py-0.5">W A S D</span> atau{' '}
-              <span className="rounded bg-white/20 px-1.5 py-0.5">← ↑ ↓ →</span> untuk berjalan
-            </p>
-            <p className="text-xs font-medium text-white/70">Tahan & geser mouse untuk memutar kamera</p>
-          </div>
-        )}
-
-        <div className="flex flex-col items-end gap-2">
-          <div className="pointer-events-auto max-w-[46vw] rounded-2xl border border-white/40 bg-white/85 px-3 py-2 text-right shadow-lg backdrop-blur-sm sm:max-w-xs sm:px-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">
-              Tujuan
-            </p>
-            <p className="text-xs font-bold leading-snug text-slate-700 sm:text-sm">{objective}</p>
-          </div>
-          {compact && (
-            <div className="rounded-xl border border-white/20 bg-slate-900/55 px-3 py-1.5 text-[10px] font-bold text-white/90 shadow backdrop-blur-sm sm:text-xs">
-              Geser layar untuk memutar kamera
-            </div>
           )}
-          <button
-            onClick={() => {
-              playSound?.('click');
-              onClassicMode();
-            }}
-            className="pointer-events-auto flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-white/70 bg-slate-900/80 px-3 py-2.5 text-sm font-black text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900 active:scale-95 sm:hidden"
-          >
-            <Gamepad2 size={18} className="text-yellow-300" />
-            Mode Klasik
-          </button>
         </div>
       </div>
+
+      {/* ---------- KARTU INFORMASI ZONA ---------- */}
+      <AnimatePresence>
+        {activeZone && (
+          <ZoneInfoCard
+            key={activeZone.id}
+            zone={activeZone}
+            completed={completedZones.includes(activeZone.id)}
+            read={readZones.includes(activeZone.id)}
+            onClose={closeZoneCard}
+            onStartMission={startMissionFromCard}
+            playSound={playSound}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ---------- MODAL TUJUAN PEMBELAJARAN ---------- */}
+      <AnimatePresence>
+        {objectivesOpen && (
+          <LearningObjectivesModal onClose={closeObjectives} playSound={playSound} />
+        )}
+      </AnimatePresence>
+
+      {/* ---------- KARTU PANDUAN BERMAIN ---------- */}
+      <AnimatePresence>
+        {guideOpen && <GuideCard onClose={closeGuide} playSound={playSound} />}
+      </AnimatePresence>
+
+      {/* ---------- SAPAAN KAPTEN SIAGA (popup awal) ---------- */}
+      <AnimatePresence>
+        {welcomeOpen && (
+          <WelcomeModal
+            teamName={teamName}
+            onClose={closeWelcome}
+            playSound={playSound}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ---------- KONFIRMASI KEMBALI KE BERANDA ---------- */}
+      <ExitConfirmDialog
+        open={exitDialogOpen}
+        onClose={() => setExitDialogOpen(false)}
+        onConfirm={() => {
+          setExitDialogOpen(false);
+          onExit?.();
+        }}
+        onClassicMode={() => {
+          setExitDialogOpen(false);
+          onClassicMode();
+        }}
+        onRequestOpen={
+          zoneCardOpen || missionListOpen || guideOpen || objectivesOpen || welcomeOpen
+            ? undefined
+            : () => setExitDialogOpen(true)
+        }
+        playSound={playSound}
+        title="Kembali ke beranda?"
+        description={'Progres tim akan dihapus kalau kamu kembali ke halaman utama. Pilih "Lanjut Main" untuk tetap menjelajah.'}
+        confirmLabel="Kembali ke Beranda"
+      />
 
       {/* ---------- LOADING ---------- */}
       {!ready && webglOk && <WorldLoadingScreen message="Menyiapkan alam petualangan..." />}

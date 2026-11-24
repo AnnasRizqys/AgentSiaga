@@ -150,6 +150,21 @@ export const INFO_BOARDS: InfoBoard[] = [
   { id: 'board-volcano', zoneId: 'VOLCANO', position: [19, 0, -7], rotation: -1.2 },
 ];
 
+/**
+ * Papan "Panduan Bermain" di area terbuka base camp (sisi kiri jalur utama,
+ * di depan tenda dan aman dari pohon/api unggun). Papan menghadap kamera
+ * orang ketiga pemain supaya tulisannya langsung terbaca jelas sejak spawn —
+ * tidak lagi tertutup pohon birch maupun HUD minimap di kanan atas.
+ */
+export const GUIDE_BOARD = {
+  id: 'board-panduan',
+  position: [-2.2, 0, 14] as [number, number, number],
+  rotation: 0.28,
+};
+
+/** Jarak maksimal pemain ke papan panduan agar kartu petunjuk terbuka. */
+export const GUIDE_BOARD_READ_RADIUS = 3;
+
 /** Jarak maksimal pemain ke papan agar panel fakta terbuka. */
 export const INFO_BOARD_READ_RADIUS = 3;
 
@@ -211,6 +226,13 @@ export const COLLIDERS: BoxCollider[] = [
     minZ: rock.z - rock.scale * 0.75,
     maxZ: rock.z + rock.scale * 0.75,
   })),
+  // Papan panduan bermain di base camp
+  {
+    minX: GUIDE_BOARD.position[0] - 0.8,
+    maxX: GUIDE_BOARD.position[0] + 0.8,
+    minZ: GUIDE_BOARD.position[2] - 1.5,
+    maxZ: GUIDE_BOARD.position[2] + 1.5,
+  },
   // Papan informasi fakta
   ...INFO_BOARDS.map((board) => ({
     minX: board.position[0] - 0.9,

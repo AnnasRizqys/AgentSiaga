@@ -162,3 +162,14 @@ Jangan commit `.env.local`. Nilai kunci dipakai oleh `services/geminiService.ts`
 ## Lisensi & Kredit
 
 Proyek edukasi Agent Siaga — Misi Penyelamatan Bumi. Aset karakter dan lingkungan dibuat untuk keperluan pembelajaran kesiapsiagaan bencana.
+
+Foto dokumenter pada kartu informasi zona (`public/assets/disaster-*.jpg`) bersumber dari Wikimedia Commons:
+
+| Foto | Sumber | Lisensi |
+| --- | --- | --- |
+| Gempa Bumi | VOA — [2023 Turkey Earthquake Damage](https://commons.wikimedia.org/wiki/File:2023_Turkey_Earthquake_Damage.jpg) | Public Domain |
+| Banjir Bandang | Kamil Czainski — [Flood rescue boat](https://commons.wikimedia.org/wiki/File:Ostrava-P%C5%99%C3%ADvoz,_Sokolsk%C3%A1_t%C5%99%C3%ADda,_16.9.2024,_z%C3%A1chrann%C3%BD_%C4%8Dlun_02.jpg) | CC BY-SA 4.0 |
+| Gunung Meletus | gnuckx — [Etna eruption](https://commons.wikimedia.org/wiki/File:Etna_Volcano_Paroxysmal_Eruption_July_30_2011_-_Creative_Commons_by_gnuckx_(6).jpg) | CC BY 2.0 |
+| Tanah Longsor | Radio Rakyat Indonesia Banjarmasin — [Longsor Km 171 Tanah Bumbu](https://commons.wikimedia.org/wiki/File:Longsor_Kilometer_171_Tanah_Bumbu.jpg) | Public Domain |
+
+Kredit juga ditampilkan di sudut foto pada kartu zona aplikasi.

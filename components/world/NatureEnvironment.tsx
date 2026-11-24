@@ -451,8 +451,9 @@ const BaseCamp: React.FC = () => {
     <group>
       {/* Papan petunjuk */}
       <group position={[BASE_CAMP.sign.x, 0, BASE_CAMP.sign.z]} rotation-y={0.16}>
+        {/* Tiang digeser ke belakang (Z negatif) agar tidak menutupi teks papan. */}
         {[-1.35, 1.35].map((x) => (
-          <mesh key={x} position={[x, 1.2, 0]}>
+          <mesh key={x} position={[x, 1.2, -0.2]}>
             <cylinderGeometry args={[0.09, 0.12, 2.4, 7]} />
             <meshStandardMaterial color="#6b4a2e" roughness={1} map={wood} />
           </mesh>
@@ -590,13 +591,13 @@ export const NatureEnvironment: React.FC = () => {
       {/* Padang rumput */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[82, 82]} />
-        <meshStandardMaterial map={grass} color="#ffffff" roughness={0.95} />
+        <meshStandardMaterial map={grass} color="#f4ffee" roughness={0.9} metalness={0.02} />
       </mesh>
 
       {/* Area tengah yang lebih terang */}
       <mesh rotation-x={-Math.PI / 2} position={[0, 0.012, 4]}>
         <circleGeometry args={[10.5, 40]} />
-        <meshStandardMaterial color="#8cc767" roughness={0.95} transparent opacity={0.65} />
+        <meshStandardMaterial color="#a6e98b" roughness={0.9} transparent opacity={0.7} />
       </mesh>
 
       {/* Jalur tanah */}
@@ -608,7 +609,7 @@ export const NatureEnvironment: React.FC = () => {
           position={[trail.x, 0.022, trail.z]}
         >
           <planeGeometry args={[trail.width, trail.length]} />
-          <meshStandardMaterial map={dirt} color="#e0c193" roughness={0.98} transparent opacity={0.95} />
+          <meshStandardMaterial map={dirt} color="#f2d6a8" roughness={0.95} transparent opacity={0.95} />
         </mesh>
       ))}
 
@@ -626,7 +627,7 @@ export const NatureEnvironment: React.FC = () => {
         <mesh key={index} position={[x, 0.4, z]} scale={[1.15, height, 1.15]}>
           <sphereGeometry args={[radius, 14, 10]} />
           <meshStandardMaterial
-            color={index % 2 === 0 ? '#4f7c43' : '#5c8b4b'}
+            color={index % 2 === 0 ? '#5f9450' : '#6ea35a'}
             roughness={1}
             flatShading
           />

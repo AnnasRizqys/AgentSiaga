@@ -112,15 +112,15 @@ export const LEVELS: Record<string, LevelConfig> = {
       },
       {
         id: 4,
-        question: "Segitiga kehidupan (triangle of life) adalah...",
+        question: "Guncangan gempa sudah berhenti. Apa yang sebaiknya kamu lakukan?",
         options: [
-          "Tempat aman di samping benda besar yang kuat (lemari, sofa)",
-          "Tempat di tengah ruangan yang kosong",
-          "Tempat di bawah tangga",
-          "Tempat di dekat pintu keluar"
+          "Keluar ke lapangan terbuka dan tetap waspada gempa susulan",
+          "Tetap di dalam gedung yang retak",
+          "Naik lift agar cepat",
+          "Kembali mengambil barang yang tertinggal"
         ],
         correctIndex: 0,
-        explanation: "Segitiga kehidupan adalah ruang kosong yang terbentuk saat benda besar tertimpa reruntuhan. Ruang ini bisa melindungi kita."
+        explanation: "Setelah guncangan berhenti, keluar ke lapangan terbuka dan jauhi bangunan rusak. Gempa susulan bisa datang, jadi tetap waspada."
       },
       {
         id: 5,

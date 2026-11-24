@@ -15,22 +15,46 @@ export interface PerformanceData {
   // RECOVERY phase details
   quizCorrect?: number;
   quizTotal?: number;
+  /** Penjelasan dari soal yang dijawab benar — dipakai di layar hasil kuis. */
+  masteredPoints?: string[];
   // Items brought (briefing/bag)
   selectedItems?: string[];
   missedItems?: string[];
 }
 
-interface GeminiResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{
-        text?: string;
-      }>;
-    };
-  }>;
+interface GeminiApiResponse {
+  text?: string;
+  error?: string;
 }
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_ENDPOINT = '/api/gemini';
+
+/**
+ * Calls the server-side Gemini proxy. The API key never exists in the browser;
+ * the serverless function / Vite dev middleware owns it.
+ */
+async function requestGemini(
+  prompt: string,
+  temperature: number,
+  maxOutputTokens: number,
+): Promise<string | null> {
+  const response = await fetch(GEMINI_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ prompt, temperature, maxOutputTokens }),
+  });
+
+  if (!response.ok) {
+    console.warn(`Gemini proxy error: ${response.status}. Falling back.`);
+    return null;
+  }
+
+  const json = (await response.json()) as GeminiApiResponse;
+  const text = typeof json.text === 'string' ? json.text.trim() : '';
+  return text || null;
+}
 
 function buildPrompt(data: PerformanceData): string {
   const phaseLabel = data.phase === 'ACTION' ? 'Aksi Evakuasi' : 'Kuis Pemulihan';
@@ -120,56 +144,15 @@ function getFallbackNarration(data: PerformanceData): string {
 }
 
 export async function generateNarration(data: PerformanceData): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  
-  // If no API key or placeholder, use fallback
-  if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY' || apiKey.trim() === '') {
-    // Simulate a small delay for natural feel
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return getFallbackNarration(data);
-  }
-
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: buildPrompt(data),
-          }],
-        }],
-        generationConfig: {
-          temperature: 0.8,
-          topP: 0.9,
-          topK: 40,
-          maxOutputTokens: 256,
-        },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      console.warn(`Gemini API error: ${response.status}. Falling back to static narration.`);
-      return getFallbackNarration(data);
-    }
-
-    const json: GeminiResponse = await response.json();
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = await requestGemini(buildPrompt(data), 0.8, 256);
 
     if (!text) {
-      console.warn('Gemini API returned empty response. Falling back.');
+      console.warn('Gemini returned no narration. Falling back to static narration.');
       return getFallbackNarration(data);
     }
 
-    return text.trim();
+    return text;
   } catch (error) {
     console.warn('Gemini API call failed:', error);
     return getFallbackNarration(data);
@@ -184,14 +167,9 @@ export async function generateQuestionFeedback(
   isCorrect: boolean,
   explanation: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  
-  if (!apiKey || apiKey === 'PLACEHOLDER_API_KEY' || apiKey.trim() === '') {
-    await new Promise(resolve => setTimeout(resolve, 800));
-    return isCorrect 
-      ? `Tepat sekali, ${teamName}! ${explanation}` 
-      : `Sayang sekali, ${teamName}. Jawaban yang benar adalah "${correctAnswer}". ${explanation}`;
-  }
+  const fallback = isCorrect
+    ? `Tepat sekali, ${teamName}! ${explanation}`
+    : `Sayang sekali, ${teamName}. Jawaban yang benar adalah "${correctAnswer}". ${explanation}`;
 
   const prompt = `Kamu adalah "Kapten Siaga", ahli kebencanaan yang sedang membimbing tim "${teamName}".
 Tim baru saja menjawab soal kuis ini:
@@ -208,29 +186,10 @@ Berikan feedback SPESIFIK maksimal 3 kalimat:
 Jangan pakai format markdown.`;
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 150 },
-      }),
-    });
-
-    if (!response.ok) {
-      return isCorrect 
-        ? `Tepat sekali, ${teamName}! ${explanation}` 
-        : `Sayang sekali, ${teamName}. Jawaban yang benar adalah "${correctAnswer}". ${explanation}`;
-    }
-
-    const json = await response.json();
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    if (!text) throw new Error('Empty response');
-    return text.trim();
+    const text = await requestGemini(prompt, 0.7, 150);
+    return text ?? fallback;
   } catch (error) {
-    return isCorrect 
-      ? `Tepat sekali, ${teamName}! ${explanation}` 
-      : `Sayang sekali, ${teamName}. Jawaban yang benar adalah "${correctAnswer}". ${explanation}`;
+    console.warn('Gemini question feedback failed:', error);
+    return fallback;
   }
 }

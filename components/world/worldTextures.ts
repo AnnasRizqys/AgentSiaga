@@ -457,7 +457,13 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
   return lines;
 }
 
-function drawFactBoard(title: string, facts: string[], icon: string, color: string) {
+function drawFactBoard(
+  title: string,
+  facts: string[],
+  icon: string,
+  color: string,
+  clean = false
+) {
   const canvas = document.createElement('canvas');
   canvas.width = 768;
   canvas.height = 640;
@@ -494,18 +500,21 @@ function drawFactBoard(title: string, facts: string[], icon: string, color: stri
   ctx.fillStyle = color;
   ctx.fill();
 
-  // Sudut paku kecil.
-  [
-    [44, 44],
-    [724, 44],
-    [44, 596],
-    [724, 596],
-  ].forEach(([x, y]) => {
-    ctx.beginPath();
-    ctx.arc(x, y, 7, 0, Math.PI * 2);
-    ctx.fillStyle = '#d6b88a';
-    ctx.fill();
-  });
+  // Sudut paku kecil — hanya papan fakta zona. Papan panduan memakai
+  // tampilan bersih supaya tidak ada elemen yang keluar dari bingkai.
+  if (!clean) {
+    [
+      [44, 44],
+      [724, 44],
+      [44, 596],
+      [724, 596],
+    ].forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fillStyle = '#d6b88a';
+      ctx.fill();
+    });
+  }
 
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
@@ -517,13 +526,15 @@ function drawFactBoard(title: string, facts: string[], icon: string, color: stri
   ctx.font = `800 ${titleSize}px system-ui, "Segoe UI", sans-serif`;
   ctx.fillText(title, 138, 86);
 
-  // Daftar fakta bernomor
-  const bodyWidth = 640;
+  // Daftar isi. Papan panduan memakai teks rata kiri tanpa bulatan nomor,
+  // dengan margin yang lebih aman di dalam kartu putih.
+  const bodyWidth = clean ? 624 : 640;
+  const bodyX = clean ? 64 : 104;
   const factFont = 29;
   const lineHeight = 38;
   let y = 176;
   const startY = y;
-  const bottomLimit = 572;
+  const bottomLimit = clean ? 546 : 572;
 
   // Hitung dulu tinggi total supaya bisa menyesuaikan ukuran font.
   const estimated = facts.reduce((total, fact) => {
@@ -535,22 +546,24 @@ function drawFactBoard(title: string, facts: string[], icon: string, color: stri
   const lh = Math.round(lineHeight * shrink);
 
   facts.forEach((fact, index) => {
-    // Nomor
-    ctx.beginPath();
-    ctx.arc(66, y + 2, 20, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = `800 ${Math.round(24 * shrink)}px system-ui, "Segoe UI", sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(String(index + 1), 66, y + 3);
-    ctx.textAlign = 'left';
+    if (!clean) {
+      // Nomor — hanya papan fakta zona.
+      ctx.beginPath();
+      ctx.arc(66, y + 2, 20, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `800 ${Math.round(24 * shrink)}px system-ui, "Segoe UI", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(index + 1), 66, y + 3);
+      ctx.textAlign = 'left';
+    }
 
     ctx.fillStyle = '#1e293b';
     ctx.font = `700 ${size}px system-ui, "Segoe UI", sans-serif`;
     const lines = wrapLines(ctx, fact, bodyWidth);
     lines.forEach((line, lineIndex) => {
-      ctx.fillText(line, 104, y + lineIndex * lh);
+      ctx.fillText(line, bodyX, y + lineIndex * lh);
     });
     y += lines.length * lh + 18;
   });
@@ -558,22 +571,32 @@ function drawFactBoard(title: string, facts: string[], icon: string, color: stri
   ctx.strokeStyle = 'rgba(138, 90, 43, 0.25)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(64, 606);
-  ctx.lineTo(704, 606);
+  ctx.moveTo(64, clean ? 582 : 606);
+  ctx.lineTo(704, clean ? 582 : 606);
   ctx.stroke();
 
   ctx.fillStyle = '#8a5a2b';
   ctx.font = '700 20px system-ui, "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('JELAJAH ALAM SIAGA  •  PAPAN FAKTA', 384, 622);
+  ctx.fillText(
+    clean ? 'JELAJAH ALAM SIAGA  •  PANDUAN BERMAIN' : 'JELAJAH ALAM SIAGA  •  PAPAN FAKTA',
+    384,
+    clean ? 602 : 622
+  );
 
   return canvas;
 }
 
-export function useFactBoardTexture(title: string, facts: string[], icon: string, color: string) {
+export function useFactBoardTexture(
+  title: string,
+  facts: string[],
+  icon: string,
+  color: string,
+  clean = false
+) {
   const texture = useMemo(
-    () => makeCanvasTexture(drawFactBoard(title, facts, icon, color)),
-    [title, facts, icon, color]
+    () => makeCanvasTexture(drawFactBoard(title, facts, icon, color, clean)),
+    [title, facts, icon, color, clean]
   );
   useEffect(() => () => texture.dispose(), [texture]);
   return texture;
